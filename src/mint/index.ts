@@ -5,6 +5,7 @@ import { get } from 'needle';
 import { default as csvparse } from 'csv-parse';
 import { DateTime } from 'luxon';
 import { SingleBar as CliProgressBar, Presets as CliProgressPresets } from 'cli-progress';
+import { default as chalk } from 'chalk';
 
 const ACCOUNTS_TO_SKIP = [
     9872250,
@@ -25,12 +26,23 @@ export interface Transaction {
     account: Account;
 }
 
+async function promptPassword(email: string): Promise<string> {
+    const password = await prompt([{
+        message: `Password for ${email}?`,
+        type: 'password',
+        name: 'passwd'
+    }]).then(obj => obj.passwd);
+
+    if (password.length <= 6 || password.includes(' ')) {
+        console.log(chalk.red('Use 6 or more characters and no spaces.'));
+        return await promptPassword(email);
+    } else {
+        return password;
+    }
+}
+
 export async function pullAllTransactions(email: string): Promise<Transaction[]> {
-    const passwordPromise = prompt([{
-            message: `Password for ${email}?`,
-            type: 'password',
-            name: 'passwd'
-        }]).then(obj => obj.passwd);
+    const passwordPromise = promptPassword(email);
 
     const browser = await puppeteer.launch({
         headless: true,
@@ -66,11 +78,12 @@ export async function pullAllTransactions(email: string): Promise<Transaction[]>
         }
 
         await page.waitForSelector(SELECTOR.DASHBOARD.NAV.TRANSACTIONS);
-        try {
-            await page.waitForSelector(SELECTOR.MODAL_CLOSE, { timeout: 1000 });
-            await page.click(SELECTOR.MODAL_CLOSE);
-        } catch (e) { }
-        await page.click(SELECTOR.DASHBOARD.NAV.TRANSACTIONS);
+
+        while (await page.evaluate(sel => {
+            return !(document.querySelector(sel).className.split(' ').includes('selected'));
+        }, SELECTOR.DASHBOARD.NAV.TRANSACTIONS)) {
+            await page.click(SELECTOR.DASHBOARD.NAV.TRANSACTIONS);
+        }
 
         const SEL = SELECTOR.DASHBOARD.TRANSACTIONS;
         await page.waitForSelector(SEL.ACCOUNT_NAV.ALL_ACCOUNTS);
@@ -98,38 +111,43 @@ export async function pullAllTransactions(email: string): Promise<Transaction[]>
         const cli = new CliProgressBar({}, CliProgressPresets.shades_classic);
         cli.start(accounts.length, 0);
 
-        await Promise.all(accounts.map(account => (async () => {
-            const parser = get(`https://mint.intuit.com/transactionDownload.event?accountId=${account.id}&queryNew=&offset=0&comparableType=8`, { cookies: cookies })
-                .pipe(csvparse({
-                    bom: true,
-                    columns: true,
-                }));
+        try {
+            await Promise.all(accounts.map(account => (async () => {
+                const parser = get(`https://mint.intuit.com/transactionDownload.event?accountId=${account.id}&queryNew=&offset=0&comparableType=8`, { cookies: cookies })
+                    .pipe(csvparse({
+                        bom: true,
+                        columns: true,
+                    }));
 
-            for await (const record of parser) {
-                const transaction: Transaction = {
-                    date: DateTime.fromFormat(record['Date'], 'M/dd/yyyy'),
-                    description: record['Original Description'],
-                    amount: Number(record['Amount']) * (record['Transaction Type'] === 'credit' ? 1 : -1),
-                    account: account
-                };
+                for await (const record of parser) {
+                    const transaction: Transaction = {
+                        date: DateTime.fromFormat(record['Date'], 'M/dd/yyyy'),
+                        description: record['Original Description'],
+                        amount: Number(record['Amount']) * (record['Transaction Type'] === 'credit' ? 1 : -1),
+                        account: account
+                    };
 
-                if (!transaction.date.isValid) throw new Error(`Unparseable date: ${JSON.stringify(record['Date'])}`);
-                if (undefined === transaction.description) throw new Error(`Missing column "Original Description". Available columns are: ${JSON.stringify(Object.keys(record))}`);
-                if (isNaN(transaction.amount)) throw new Error(`Unparseable amount: ${JSON.stringify(record['Amount'])}`);
+                    if (!['credit', 'debit'].includes(record['Transaction Type'])) throw new Error(`Unknown "Transaction Type": ${JSON.stringify(record['Transaction Type'])}`);
+                    if (!transaction.date.isValid) throw new Error(`Unparseable date: ${JSON.stringify(record['Date'])}`);
+                    if (undefined === transaction.description) throw new Error(`Missing column "Original Description". Available columns are: ${JSON.stringify(Object.keys(record))}`);
+                    if (isNaN(transaction.amount)) throw new Error(`Unparseable amount: ${JSON.stringify(record['Amount'])}`);
 
-                transactions.push(transaction);
-            }
+                    transactions.push(transaction);
+                }
 
-            cli.increment();
-        })()));
-
-        cli.stop();
+                cli.increment();
+            })()));
+        } finally {
+            cli.stop();
+        }
 
         return transactions;
     } catch (e) {
-        if (!page.isClosed) {
+        try {
+            await page.screenshot({ path: 'error.png' })
             await page.close();
-        }
+        } catch(_) {}
+
         throw e;
     }
 }

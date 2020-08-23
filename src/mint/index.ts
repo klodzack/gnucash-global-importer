@@ -6,6 +6,7 @@ import { default as csvparse } from 'csv-parse';
 import { DateTime } from 'luxon';
 import { SingleBar as CliProgressBar, Presets as CliProgressPresets } from 'cli-progress';
 import { default as chalk } from 'chalk';
+import { MultiLineCli } from './MultiLineCli';
 
 const ACCOUNTS_TO_SKIP = [
     9872250,
@@ -108,38 +109,38 @@ export async function pullAllTransactions(email: string): Promise<Transaction[]>
 
         const transactions: Transaction[] = [];
 
-        const cli = new CliProgressBar({}, CliProgressPresets.shades_classic);
-        cli.start(accounts.length, 0);
+        const cli = new MultiLineCli(accounts.map(acc => `${chalk.green(acc.provider + ' - ' + acc.name)}: Initializing download...`));
 
-        try {
-            await Promise.all(accounts.map(account => (async () => {
-                const parser = get(`https://mint.intuit.com/transactionDownload.event?accountId=${account.id}&queryNew=&offset=0&comparableType=8`, { cookies: cookies })
-                    .pipe(csvparse({
-                        bom: true,
-                        columns: true,
-                    }));
+        await Promise.all(accounts.map((account, index) => (async () => {
+            const parser = get(`https://mint.intuit.com/transactionDownload.event?accountId=${account.id}&queryNew=&offset=0&comparableType=8`, { cookies: cookies })
+                .pipe(csvparse({
+                    bom: true,
+                    columns: true,
+                }));
 
-                for await (const record of parser) {
-                    const transaction: Transaction = {
-                        date: DateTime.fromFormat(record['Date'], 'M/dd/yyyy'),
-                        description: record['Original Description'],
-                        amount: Number(record['Amount']) * (record['Transaction Type'] === 'credit' ? 1 : -1),
-                        account: account
-                    };
-
-                    if (!['credit', 'debit'].includes(record['Transaction Type'])) throw new Error(`Unknown "Transaction Type": ${JSON.stringify(record['Transaction Type'])}`);
-                    if (!transaction.date.isValid) throw new Error(`Unparseable date: ${JSON.stringify(record['Date'])}`);
-                    if (undefined === transaction.description) throw new Error(`Missing column "Original Description". Available columns are: ${JSON.stringify(Object.keys(record))}`);
-                    if (isNaN(transaction.amount)) throw new Error(`Unparseable amount: ${JSON.stringify(record['Amount'])}`);
-
-                    transactions.push(transaction);
+            let cnt = 0;
+            for await (const record of parser) {
+                if (cnt === 0) {
+                    cli.updateLine(index, `${chalk.magentaBright(account.provider + ' - ' + account.name)}: Downloading...`);
                 }
+                const transaction: Transaction = {
+                    date: DateTime.fromFormat(record['Date'], 'M/dd/yyyy'),
+                    description: record['Original Description'],
+                    amount: Number(record['Amount']) * (record['Transaction Type'] === 'credit' ? 1 : -1),
+                    account: account
+                };
 
-                cli.increment();
-            })()));
-        } finally {
-            cli.stop();
-        }
+                if (!['credit', 'debit'].includes(record['Transaction Type'])) throw new Error(`Unknown "Transaction Type": ${JSON.stringify(record['Transaction Type'])}`);
+                if (!transaction.date.isValid) throw new Error(`Unparseable date: ${JSON.stringify(record['Date'])}`);
+                if (undefined === transaction.description) throw new Error(`Missing column "Original Description". Available columns are: ${JSON.stringify(Object.keys(record))}`);
+                if (isNaN(transaction.amount)) throw new Error(`Unparseable amount: ${JSON.stringify(record['Amount'])}`);
+
+                transactions.push(transaction);
+                cnt++;
+            }
+
+            cli.updateLine(index, `${chalk.green(`${account.provider} - ${account.name}`)}: ${chalk.magentaBright(cnt)} transactions.`);
+        })()));
 
         return transactions;
     } catch (e) {

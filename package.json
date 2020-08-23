@@ -18,8 +18,8 @@
   },
   "homepage": "https://github.com/klodzack/gnucash-global-importer#readme",
   "dependencies": {
+    "ansi": "^0.3.1",
     "chalk": "^4.1.0",
-    "cli-progress": "^3.8.2",
     "csv-parse": "^4.12.0",
     "fetch": "^1.1.0",
     "fs-extra": "^9.0.1",
@@ -31,6 +31,7 @@
     "xml-js": "^1.6.11"
   },
   "devDependencies": {
+    "@types/ansi": "^0.3.2",
     "@types/cli-progress": "^3.8.0",
     "@types/fs-extra": "^9.0.1",
     "@types/inquirer": "^7.3.0",

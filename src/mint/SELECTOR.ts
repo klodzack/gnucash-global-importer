@@ -12,12 +12,12 @@ export const SELECTOR = {
         INPUT: 'input[id="ius-mfa-confirm-code"]',
         SUBMIT: 'input[id="ius-mfa-otp-submit-btn"]',
     },
+    MODAL_CLOSE: '[data-automation-id="ModalDialog"] button[aria-label="Close"]',
     DASHBOARD: {
         NAV: {
             TRANSACTIONS: 'a[href="/transaction.event"]',
         },
         TRANSACTIONS: {
-            MODAL_CLOSE: '[data-automation-id="ModalDialog"] button[aria-label="Close"]',
             ACCOUNT_NAV: {
                 ALL_ACCOUNTS: 'div.transactionPage li[id="account-0"]',
                 ANY_ACCOUNT: 'div.transactionPage li[id^="account-"]',

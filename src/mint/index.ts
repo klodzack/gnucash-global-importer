@@ -1,7 +1,10 @@
 import { default as puppeteer } from 'puppeteer';
 import { prompt } from 'inquirer';
 import { SELECTOR } from './SELECTOR';
-import { promises } from 'fs-extra';
+import { get } from 'needle';
+import { default as csvparse } from 'csv-parse';
+import { DateTime } from 'luxon';
+import { SingleBar as CliProgressBar, Presets as CliProgressPresets } from 'cli-progress';
 
 const ACCOUNTS_TO_SKIP = [
     9872250,
@@ -22,18 +25,13 @@ export interface Transaction {
     account: Account;
 }
 
-async function debugScreenshot(page: puppeteer.Page) {
-    if (process.env.DEBUG_SCREENSHOTS) await page.screenshot({
-        path: 'debug.png'
-    });
-}
-
-async function downloadRequewst(req: puppeteer.Request) {
-    console.dir(req);
-}
-
 export async function pullAllTransactions(email: string): Promise<Transaction[]> {
-    console.log('Initializing browser...');
+    const passwordPromise = prompt([{
+            message: `Password for ${email}?`,
+            type: 'password',
+            name: 'passwd'
+        }]).then(obj => obj.passwd);
+
     const browser = await puppeteer.launch({
         headless: true,
         defaultViewport: {
@@ -43,53 +41,37 @@ export async function pullAllTransactions(email: string): Promise<Transaction[]>
     });
     const page = await browser.newPage();
     try {
-        console.log('Navigating to Mint...');
         await page.goto('https://mint.com');
-        await debugScreenshot(page);
-        console.log('Signing in...');
         await page.click(SELECTOR.ROOT.SIGN_IN);
-        await debugScreenshot(page);
         await page.waitForSelector(SELECTOR.SIGN_IN.EMAIL);
         await page.type(SELECTOR.SIGN_IN.EMAIL, email);
-        await debugScreenshot(page);
-        const passwd = (await prompt([{
-            message: `Password for ${email}?`,
-            type: 'password',
-            name: 'passwd'
-        }])).passwd;
-        await page.type(SELECTOR.SIGN_IN.PASSWORD, passwd);
-        await debugScreenshot(page);
+        await page.type(SELECTOR.SIGN_IN.PASSWORD, await passwordPromise);
         await page.click(SELECTOR.SIGN_IN.SUBMIT);
-        await debugScreenshot(page);
         const needMfa = await Promise.race([
             page.waitForSelector(SELECTOR.DASHBOARD.NAV.TRANSACTIONS).then(() => false),
             page.waitForSelector(SELECTOR.MFA.START_BUTTON).then(() => true),
         ]);
-        await debugScreenshot(page);
 
         if (needMfa) {
-            console.log('Starting 2fa...');
             await page.click(SELECTOR.MFA.START_BUTTON);
             const mfa = (await prompt([{
                 message: '2fa?',
                 type: 'number',
                 name: 'mfa'
             }])).mfa;
-            await debugScreenshot(page);
             await page.waitForSelector(SELECTOR.MFA.INPUT);
             await page.type(SELECTOR.MFA.INPUT, `${mfa}`);
-            await debugScreenshot(page);
             await page.click(SELECTOR.MFA.SUBMIT);
-            await debugScreenshot(page);
             await page.waitForSelector(SELECTOR.DASHBOARD.NAV.TRANSACTIONS);
-            await debugScreenshot(page);
         }
 
-        console.log('Opening transactions...');
+        await page.waitForSelector(SELECTOR.DASHBOARD.NAV.TRANSACTIONS);
+        try {
+            await page.waitForSelector(SELECTOR.MODAL_CLOSE, { timeout: 1000 });
+            await page.click(SELECTOR.MODAL_CLOSE);
+        } catch (e) { }
+        await page.click(SELECTOR.DASHBOARD.NAV.TRANSACTIONS);
 
-        await page.click(SELECTOR.DASHBOARD.NAV.TRANSACTIONS);
-        await page.click(SELECTOR.DASHBOARD.NAV.TRANSACTIONS);
-        await debugScreenshot(page);
         const SEL = SELECTOR.DASHBOARD.TRANSACTIONS;
         await page.waitForSelector(SEL.ACCOUNT_NAV.ALL_ACCOUNTS);
         const accounts = await page.evaluate(selector => {
@@ -107,86 +89,47 @@ export async function pullAllTransactions(email: string): Promise<Transaction[]>
                 .filter(x => x.id !== 0);
         }, SEL.ACCOUNT_NAV.ANY_ACCOUNT);
 
+        const cookies = Object.fromEntries((await page.cookies()).map(x => [x.name, x.value]));
+
+        await browser.close();
+
         const transactions: Transaction[] = [];
 
-        try {
-            await page.waitForSelector(SEL.MODAL_CLOSE, { timeout: 1000 });
-            await debugScreenshot(page);
-            console.log('Closing modal...');
-            await page.click(SEL.MODAL_CLOSE);
-            await debugScreenshot(page);
-        } catch (e) { }
+        const cli = new CliProgressBar({}, CliProgressPresets.shades_classic);
+        cli.start(accounts.length, 0);
 
-        for (const account of accounts) {
-            if (ACCOUNTS_TO_SKIP.includes(account.id)) continue;
+        await Promise.all(accounts.map(account => (async () => {
+            const parser = get(`https://mint.intuit.com/transactionDownload.event?accountId=${account.id}&queryNew=&offset=0&comparableType=8`, { cookies: cookies })
+                .pipe(csvparse({
+                    bom: true,
+                    columns: true,
+                }));
 
-            console.dir(account);
-            await page.evaluate(() => {
-                // Sometimes the edit bar glitches to the left and gets in the way.
-                // Lets just kill it if it exists.
-                const editBar = document.getElementById('txnEdit-basic');
-                if (editBar) editBar.style.display = 'none';
-            });
-            await page.waitForSelector(SEL.ACCOUNT_NAV.ACCOUNT(account.id));
-            await page.click(SEL.ACCOUNT_NAV.ACCOUNT(account.id));
-            await debugScreenshot(page);
+            for await (const record of parser) {
+                const transaction: Transaction = {
+                    date: DateTime.fromFormat(record['Date'], 'M/dd/yyyy'),
+                    description: record['Original Description'],
+                    amount: Number(record['Amount']) * (record['Transaction Type'] === 'credit' ? 1 : -1),
+                    account: account
+                };
 
-            try {
-                await page.waitForFunction(
-                    (selector, goal) => {
-                        const result = document.querySelector(selector);
-                        if (!result) return false;
-                        return result.innerText.trim() === goal;
-                    },
-                    { timeout: 10000 },
-                    SEL.TRANSACTION_DETAILS.ACCOUNT,
-                    `${account.provider} - ${account.name}`
-                );
-            } catch (e) {
-                const noTrx = await page.evaluate(() => {
-                    return document.getElementById('body-container')?.className.includes('no_txn');
-                });
-                if (noTrx) {
-                    console.log(`${account.provider} - ${account.name} does not have any transactions.`);
-                } else {
-                    throw e;
-                }
+                if (!transaction.date.isValid) throw new Error(`Unparseable date: ${JSON.stringify(record['Date'])}`);
+                if (undefined === transaction.description) throw new Error(`Missing column "Original Description". Available columns are: ${JSON.stringify(Object.keys(record))}`);
+                if (isNaN(transaction.amount)) throw new Error(`Unparseable amount: ${JSON.stringify(record['Amount'])}`);
+
+                transactions.push(transaction);
             }
 
-            await debugScreenshot(page);
+            cli.increment();
+        })()));
 
-            const requestPromise = new Promise<puppeteer.Request>(resolve => {
-                page.once('request', interceptedRequest => {
-                    if (!interceptedRequest.url().includes('transactionDownload')) {
-                        interceptedRequest.continue();
-                        return;
-                    }
-                    interceptedRequest.abort(); // stop intercepting requests
-                    resolve(interceptedRequest);
-                });
-            });
-
-            await page.setRequestInterception(true);
-
-            await page.evaluate(
-                selector => document.querySelector(selector).click(),
-                SEL.TRANSACTION_DETAILS.DOWNLOAD_CSV);
-
-            await downloadRequewst(await requestPromise);
-            await debugScreenshot(page);
-        }
-
-        await page.screenshot({
-            path: './result.png'
-        });
-        await browser.close();
+        cli.stop();
 
         return transactions;
     } catch (e) {
-        await debugScreenshot(page);
-        await page.screenshot({
-            path: './error.png'
-        });
+        if (!page.isClosed) {
+            await page.close();
+        }
         throw e;
     }
 }

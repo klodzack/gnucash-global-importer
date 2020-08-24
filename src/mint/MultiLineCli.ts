@@ -1,6 +1,6 @@
 import { default as ansi } from 'ansi';
 
-const cursor = ansi(process.stdout, {buffering: false, enabled: true});
+const cursor = ansi(process.stdout);
 
 export class MultiLineCli {
     constructor(private lines: string[]) {
@@ -14,8 +14,8 @@ export class MultiLineCli {
 
     private eraseAll() {
         for (const line of this.lines) {
-            cursor.eraseLine();
             cursor.previousLine();
+            cursor.eraseLine();
         }
     }
 
@@ -41,5 +41,11 @@ export class MultiLineCli {
         for (let i=1; i<up; i++) {
             cursor.nextLine();
         }
+    }
+
+    updateAll(newLines: string[]) {
+        this.eraseAll();
+        this.lines = newLines;
+        this.drawAll();
     }
 }

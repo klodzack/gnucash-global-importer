@@ -7,6 +7,7 @@ import { DateTime } from 'luxon';
 import { SingleBar as CliProgressBar, Presets as CliProgressPresets } from 'cli-progress';
 import { default as chalk } from 'chalk';
 import { MultiLineCli } from './MultiLineCli';
+import { HideableMultiLineCli } from './HideableMultiLineCli';
 
 const ACCOUNTS_TO_SKIP = [
     9872250,
@@ -43,8 +44,11 @@ async function promptPassword(email: string): Promise<string> {
 }
 
 export async function pullAllTransactions(email: string): Promise<Transaction[]> {
+    const cli = new HideableMultiLineCli([]);
     const passwordPromise = promptPassword(email);
+    passwordPromise.then(() => cli.unhide());
 
+    cli.updateAll(['Initializing Browser...']);
     const browser = await puppeteer.launch({
         headless: true,
         defaultViewport: {
@@ -54,40 +58,57 @@ export async function pullAllTransactions(email: string): Promise<Transaction[]>
     });
     const page = await browser.newPage();
     try {
+        cli.updateAll(['Opening mint.com...']);
         await page.goto('https://mint.com');
+        cli.updateAll(['Clicking signin button...']);
         await page.click(SELECTOR.ROOT.SIGN_IN);
+        cli.updateAll(['Waiting for sign-in page to load...']);
         await page.waitForSelector(SELECTOR.SIGN_IN.EMAIL);
+        cli.updateAll(['Typing email address...']);
         await page.type(SELECTOR.SIGN_IN.EMAIL, email);
+        cli.updateAll(['Typing password...']);
         await page.type(SELECTOR.SIGN_IN.PASSWORD, await passwordPromise);
+        cli.updateAll(['Clicking submit...']);
         await page.click(SELECTOR.SIGN_IN.SUBMIT);
+        cli.updateAll(['Waiting for login...']);
         const needMfa = await Promise.race([
             page.waitForSelector(SELECTOR.DASHBOARD.NAV.TRANSACTIONS).then(() => false),
             page.waitForSelector(SELECTOR.MFA.START_BUTTON).then(() => true),
         ]);
 
         if (needMfa) {
+            cli.updateAll(['Starting 2fa...']);
+            cli.hide();
             await page.click(SELECTOR.MFA.START_BUTTON);
             const mfa = (await prompt([{
                 message: '2fa?',
                 type: 'number',
                 name: 'mfa'
             }])).mfa;
+            cli.unhide();
+            cli.updateAll(['Typing 2fa...']);
             await page.waitForSelector(SELECTOR.MFA.INPUT);
             await page.type(SELECTOR.MFA.INPUT, `${mfa}`);
+            cli.updateAll(['Clicking 2fa submit button...']);
             await page.click(SELECTOR.MFA.SUBMIT);
-            await page.waitForSelector(SELECTOR.DASHBOARD.NAV.TRANSACTIONS);
+            cli.updateAll(['Waiting for login (after 2fa)...']);
         }
 
         await page.waitForSelector(SELECTOR.DASHBOARD.NAV.TRANSACTIONS);
 
+        let num = 0;
         while (await page.evaluate(sel => {
             return !(document.querySelector(sel).className.split(' ').includes('selected'));
         }, SELECTOR.DASHBOARD.NAV.TRANSACTIONS)) {
+
+            cli.updateAll([`Clicking "Transactions" (${++num})...`]);
             await page.click(SELECTOR.DASHBOARD.NAV.TRANSACTIONS);
         }
 
+        cli.updateAll(["Waiting for transactions page to load..."]);
         const SEL = SELECTOR.DASHBOARD.TRANSACTIONS;
         await page.waitForSelector(SEL.ACCOUNT_NAV.ALL_ACCOUNTS);
+        cli.updateAll(["Listing accounts..."]);
         const accounts = await page.evaluate(selector => {
             return Array.from(document.querySelectorAll(selector))
                 .map((x: HTMLElement) => {
@@ -103,13 +124,15 @@ export async function pullAllTransactions(email: string): Promise<Transaction[]>
                 .filter(x => x.id !== 0);
         }, SEL.ACCOUNT_NAV.ANY_ACCOUNT);
 
+        cli.updateAll(["Processing..."]);
+
         const cookies = Object.fromEntries((await page.cookies()).map(x => [x.name, x.value]));
 
         await browser.close();
 
         const transactions: Transaction[] = [];
 
-        const cli = new MultiLineCli(accounts.map(acc => `${chalk.green(acc.provider + ' - ' + acc.name)}: Initializing download...`));
+        cli.updateAll(accounts.map(acc => `${chalk.gray(`${acc.provider} - ${acc.name}`)}: Initializing download...`));
 
         await Promise.all(accounts.map((account, index) => (async () => {
             const parser = get(`https://mint.intuit.com/transactionDownload.event?accountId=${account.id}&queryNew=&offset=0&comparableType=8`, { cookies: cookies })
@@ -121,7 +144,7 @@ export async function pullAllTransactions(email: string): Promise<Transaction[]>
             let cnt = 0;
             for await (const record of parser) {
                 if (cnt === 0) {
-                    cli.updateLine(index, `${chalk.magentaBright(account.provider + ' - ' + account.name)}: Downloading...`);
+                    cli.updateLine(index, `${chalk.magentaBright(`${account.provider} - ${account.name}`)}: Downloading...`);
                 }
                 const transaction: Transaction = {
                     date: DateTime.fromFormat(record['Date'], 'M/dd/yyyy'),
@@ -139,7 +162,7 @@ export async function pullAllTransactions(email: string): Promise<Transaction[]>
                 cnt++;
             }
 
-            cli.updateLine(index, `${chalk.green(`${account.provider} - ${account.name}`)}: ${chalk.magentaBright(cnt)} transactions.`);
+            cli.updateLine(index, `${chalk.green(`${account.provider} - ${account.name}`)}: Loaded ${chalk.magentaBright(cnt)} transactions.`);
         })()));
 
         return transactions;

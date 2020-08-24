@@ -1,10 +1,8 @@
 import { pullAllTransactions } from './mint';
+import * as fs from 'fs-extra';
+import { RunOptions } from './RunOptions';
 
-(async () => {
-
-    await pullAllTransactions('klod.zack@gmail.com');
-
-})().catch(e => {
-    console.error(e);
-    process.exit(1);
-});
+export async function run(options: RunOptions) {
+    const transactions = await pullAllTransactions(options);
+    await fs.writeFile(options.outfile, JSON.stringify(transactions));
+}

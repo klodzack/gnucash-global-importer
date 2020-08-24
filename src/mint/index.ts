@@ -8,11 +8,7 @@ import { SingleBar as CliProgressBar, Presets as CliProgressPresets } from 'cli-
 import { default as chalk } from 'chalk';
 import { MultiLineCli } from './MultiLineCli';
 import { HideableMultiLineCli } from './HideableMultiLineCli';
-
-const ACCOUNTS_TO_SKIP = [
-    9872250,
-    9872251,
-];
+import { RunOptions } from '../RunOptions';
 
 export interface Account {
     id: number;
@@ -28,7 +24,7 @@ export interface Transaction {
     account: Account;
 }
 
-async function promptPassword(email: string): Promise<string> {
+async function promptPassword(email?: string): Promise<string> {
     const password = await prompt([{
         message: `Password for ${email}?`,
         type: 'password',
@@ -43,9 +39,9 @@ async function promptPassword(email: string): Promise<string> {
     }
 }
 
-export async function pullAllTransactions(email: string): Promise<Transaction[]> {
+export async function pullAllTransactions(options: RunOptions): Promise<Transaction[]> {
     const cli = new HideableMultiLineCli([]);
-    const passwordPromise = promptPassword(email);
+    const passwordPromise: Promise<string> = options.password ? new Promise(r => r(options.password)) : promptPassword(options.email);
     passwordPromise.then(() => cli.unhide());
 
     cli.updateAll(['Initializing Browser...']);
@@ -65,7 +61,7 @@ export async function pullAllTransactions(email: string): Promise<Transaction[]>
         cli.updateAll(['Waiting for sign-in page to load...']);
         await page.waitForSelector(SELECTOR.SIGN_IN.EMAIL);
         cli.updateAll(['Typing email address...']);
-        await page.type(SELECTOR.SIGN_IN.EMAIL, email);
+        await page.type(SELECTOR.SIGN_IN.EMAIL, options.email);
         cli.updateAll(['Typing password...']);
         await page.type(SELECTOR.SIGN_IN.PASSWORD, await passwordPromise);
         cli.updateAll(['Clicking submit...']);

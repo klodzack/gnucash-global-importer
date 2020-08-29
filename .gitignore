@@ -1,2 +1,8 @@
 node_modules
 dist
+*.gnucash.*
+sample-out.gnucash
+local.gnucash
+local-out.gnucash
+*.LCK
+*.log

@@ -61,6 +61,44 @@ export class Book extends GncElement {
         for (const account of accounts) {
             await this.getOrSetAccountForMintAccount(account);
         }
+
+        this.invalidateMakeOrReturn('transactions');
+        for (const transaction of transactions) {
+
+            const sourceAccount = this.getAccountForMintAccount(transaction.account);
+
+            const exists = !!this.getTransactions().find(trans =>
+                trans.getDatePosted().equals(transaction.date) &&
+                trans.getDescription() === transaction.description &&
+                trans.getSplits().find(sp => sp.getAccountId() === sourceAccount.getId()));
+            if (exists) continue;
+
+            const destAccount = await this.promptForAccount(
+                `${transaction.date.toISO()}: ${sourceAccount.getName()}: ${transaction.description}`,
+                a => a !== sourceAccount
+            );
+
+            this.addChild(
+                Transaction.fromObj({
+                    datePosted: transaction.date,
+                    description: transaction.description,
+                    splits: [
+                        {
+                            accountId: sourceAccount.getId(),
+                            value: transaction.amount,
+                            quantity: transaction.amount,
+                            reconciledState: false
+                        }, {
+                            accountId: destAccount.getId(),
+                            value: -transaction.amount,
+                            quantity: -transaction.amount,
+                            reconciledState: false
+                        }
+                    ]
+                }).getXML()
+            )
+        }
+
     }
 
     async promptForAccount(message: string, filter?: (a: Account) => boolean): Promise<Account> {

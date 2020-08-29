@@ -7,6 +7,10 @@ export class GncElement {
 
     constructor(private element: Element) { }
 
+    getXML(): Element {
+        return this.element;
+    }
+
     getChildren(name: string, filter?: ((e: Element) => boolean)): Element[] {
         if (!this.element.elements) return [];
         return this.element.elements.filter(e => e.type === 'element' && e.name === name && (!filter || filter(e)));

@@ -57,7 +57,7 @@ export class Split extends GncElement {
                     name: 'split:reconciled-state',
                     elements: [{
                         type: 'text',
-                        text: (!!obj.reconciledState) ? 'n' : 'y'
+                        text: (!!obj.reconciledState) ? 'y' : 'n'
                     }]
                 }, {
                     type: 'element',

@@ -8,21 +8,7 @@ import { SingleBar as CliProgressBar, Presets as CliProgressPresets } from 'cli-
 import { default as chalk } from 'chalk';
 import { MultiLineCli } from './MultiLineCli';
 import { HideableMultiLineCli } from './HideableMultiLineCli';
-import { RunOptions } from '../RunOptions';
-
-export interface Account {
-    id: number;
-    provider: string;
-    name: string;
-    lastDigits?: string;
-}
-
-export interface Transaction {
-    date: import('luxon').DateTime;
-    description: string;
-    amount: number;
-    account: Account;
-}
+import { RunOptions, Account, Transaction } from '../types';
 
 async function promptPassword(email?: string): Promise<string> {
     const password = await prompt([{
@@ -105,7 +91,7 @@ export async function pullAllTransactions(options: RunOptions): Promise<Transact
         const SEL = SELECTOR.DASHBOARD.TRANSACTIONS;
         await page.waitForSelector(SEL.ACCOUNT_NAV.ALL_ACCOUNTS);
         cli.updateAll(["Listing accounts..."]);
-        const accounts = await page.evaluate(selector => {
+        const accounts: Account[] = await page.evaluate(selector => {
             return Array.from(document.querySelectorAll(selector))
                 .map((x: HTMLElement) => {
                     const subtitle = (Array.from(x.children).find(c => c.tagName === 'SMALL') as HTMLElement).innerText;
@@ -161,7 +147,7 @@ export async function pullAllTransactions(options: RunOptions): Promise<Transact
             cli.updateLine(index, `${chalk.green(`${account.provider} - ${account.name}`)}: Loaded ${chalk.magentaBright(cnt)} transactions.`);
         })()));
 
-        return transactions;
+        return transactions.sort((a, b) => +a.date - +b.date);
     } catch (e) {
         try {
             await page.screenshot({ path: 'error.png' })

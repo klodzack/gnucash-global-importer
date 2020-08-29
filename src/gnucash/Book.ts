@@ -1,6 +1,8 @@
 import { GncElement } from "./GncElement";
 import { Transaction } from "./Transaction";
 import { Account } from "./Account";
+import { Account as MintAccount, Transaction as MintTransaction } from '../types';
+import { prompt } from 'inquirer';
 
 export class Book extends GncElement {
     getId() {
@@ -23,7 +25,56 @@ export class Book extends GncElement {
         return this.makeOrReturn('accounts', () => this.getChildren('gnc:account').map(x => new Account(x)));
     }
 
+    getAccountById(id: string): Account {
+        const ret = this.getAccounts().find(acc => acc.getId() === id);
+        if (!ret) throw new Error(`Cannot find account with id ${JSON.stringify(id)}`);
+        return ret;
+    }
+
+    getAccountForMintAccount(mintAccount: MintAccount): Account {
+        const ret = this.getAccounts()
+            .find(acc => acc.getMintAccountId() === mintAccount.id);
+
+        if (!ret) throw new Error(`Cannot find account that matches "${mintAccount.provider} - ${mintAccount.name} (${mintAccount.id})`);
+        return ret;
+    }
+
+    async getOrSetAccountForMintAccount(mintAccount: MintAccount): Promise<Account> {
+        let ret = this.getAccounts()
+            .find(acc => acc.getMintAccountId() === mintAccount.id);
+
+        if (!ret) {
+            ret = await this.promptForAccount(`Which Gnucash account corresponds to ${mintAccount.provider} - ${mintAccount.name}?`, acc => acc.getMintAccountId() === null);
+            ret.setMintAccountId(mintAccount.id);
+        }
+
+        return ret;
+    }
+
     getTransactions() {
         return this.makeOrReturn('transactions', () => this.getChildren('gnc:transaction').map(x => new Transaction(x)));
+    }
+
+    async mergeInTransactions(transactions: MintTransaction[]) {
+        const accounts = Array.from(new Set(transactions.map(value => value.account)).values());
+
+        for (const account of accounts) {
+            await this.getOrSetAccountForMintAccount(account);
+        }
+    }
+
+    async promptForAccount(message: string, filter?: (a: Account) => boolean): Promise<Account> {
+        return await prompt([{
+            message: message,
+            type: 'list',
+            choices: this.getAccounts()
+                .filter(acc => !acc.isRoot())
+                .filter(acc => !filter || filter(acc))
+                .map(account => ({
+                    name: account.getChoiceName(this),
+                    value: account,
+                })),
+            name: 'account',
+        }]).then(obj => obj.account);
     }
 }

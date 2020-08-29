@@ -1,8 +1,14 @@
 import { pullAllTransactions } from './mint';
-import * as fs from 'fs-extra';
-import { RunOptions } from './RunOptions';
+import { RunOptions } from './types/RunOptions';
+import { Gnucash } from './gnucash/Gnucash';
 
 export async function run(options: RunOptions) {
-    const transactions = await pullAllTransactions(options);
-    await fs.writeFile(options.outfile, JSON.stringify(transactions));
+    const [ gnucash, transactions ] = await Promise.all([
+        Gnucash.fromFile(options.infile),
+        pullAllTransactions(options)
+    ]);
+
+    await gnucash.mergeInTransactions(transactions);
+
+    await gnucash.writeToFile(options.outfile);
 }

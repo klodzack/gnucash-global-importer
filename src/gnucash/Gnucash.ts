@@ -1,7 +1,8 @@
 import * as fs from 'fs-extra';
-import { xml2js, Element } from 'xml-js';
+import { xml2js, js2xml, Element } from 'xml-js';
 import { GncElement } from './GncElement';
 import { Book } from './Book';
+import { Transaction as MintTransaction } from '../types';
 
 export class Gnucash extends GncElement {
     root: Element;
@@ -21,5 +22,14 @@ export class Gnucash extends GncElement {
 
     getBook(): Book {
         return this.makeOrReturn('book', () => new Book(this.getChild('gnc:book')));
+    }
+
+    async mergeInTransactions(transactions: MintTransaction[]): Promise<this> {
+        await this.getBook().mergeInTransactions(transactions);
+        return this;
+    }
+
+    async writeToFile(fname: string) {
+        await fs.writeFile(fname, js2xml(this.root));
     }
 }

@@ -42,6 +42,28 @@ export class GncElement {
         return this.cachedThings[name];
     }
 
+    invalidateMakeOrReturn(name: string) {
+        delete this.cachedThings[name];
+    }
+
+    removeChildren(children: Element[]) {
+        if (this.element.elements) {
+            this.element.elements = this.element.elements.filter(x => !children.includes(x));
+        }
+    }
+
+    addChildren(children: Element[]) {
+        for (const child of children) this.addChild(child);
+    }
+
+    addChild(child: Element) {
+        if (this.element.elements) {
+            this.element.elements.push(child);
+        } else {
+            this.element.elements = [child];
+        }
+    }
+
     _getTypes() {
         const set = new Set<string>();
         for (const elm of this.element.elements || []) {

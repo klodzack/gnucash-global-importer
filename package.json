@@ -24,6 +24,7 @@
     "fetch": "^1.1.0",
     "fs-extra": "^9.0.1",
     "inquirer": "^7.3.3",
+    "inquirer-autocomplete-prompt": "^1.1.0",
     "luxon": "^1.24.1",
     "needle": "^2.5.0",
     "puppeteer": "^5.2.1",

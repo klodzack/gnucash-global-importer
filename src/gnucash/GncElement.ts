@@ -61,6 +61,7 @@ export class GncElement {
     }
 
     addChild(child: Element) {
+        this.cachedThings = {};
         if (this.element.elements) {
             this.element.elements.push(child);
         } else {

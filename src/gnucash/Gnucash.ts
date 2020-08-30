@@ -24,11 +24,6 @@ export class Gnucash extends GncElement {
         return this.makeOrReturn('book', () => new Book(this.getChild('gnc:book')));
     }
 
-    async mergeInTransactions(transactions: MintTransaction[]): Promise<this> {
-        await this.getBook().mergeInTransactions(transactions);
-        return this;
-    }
-
     async writeToFile(fname: string) {
         await fs.writeFile(fname, js2xml(this.root));
     }

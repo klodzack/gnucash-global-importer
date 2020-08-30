@@ -41,7 +41,7 @@ export class Account extends GncElement {
         const parentId = this.getParentId();
         const parent = parentId ? book.getAccountById(parentId) : null;
         if (!parent || parent.isRoot()) return this.getName();
-        else return parent.getName() + ' => ' + this.getName();
+        else return parent.getChoiceName(book) + ' => ' + this.getName();
     }
 
     getSlots(): Slots {

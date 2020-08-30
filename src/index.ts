@@ -1,4 +1,5 @@
 import { prompt } from 'inquirer';
+prompt.registerPrompt('autocomplete', require('inquirer-autocomplete-prompt'));
 import { pullAllTransactions } from './mint';
 import { RunOptions } from './types/RunOptions';
 import { Gnucash } from './gnucash/Gnucash';
@@ -83,14 +84,26 @@ async function getOrSetGnucashAccountForMintAccount(mintAccount: Account, book: 
 }
 
 async function promptForAccount(message: string, accounts: GnucashAccount[], book: Book): Promise<GnucashAccount> {
+    const choices = accounts.map(account => ({
+        name: account.getChoiceName(book),
+        value: account,
+    }));
+
     return await prompt([{
         message: message,
-        type: 'list',
-        choices: accounts
-            .map(account => ({
-                name: account.getChoiceName(book),
-                value: account,
-            })),
+        type: 'autocomplete',
         name: 'account',
+        source: (_: unknown, input = '') => {
+            const search = input.toLowerCase().trim();
+            const entirePhraseContained = choices.filter(choice => choice.name.toLowerCase().includes(search));
+            const searchWords = search.split(/\s+/).filter(word => word.length);
+            const eachWordContained = choices.filter(choice => 
+                !entirePhraseContained.includes(choice) &&
+                searchWords.every(word => choice.name.toLowerCase().includes(word)));
+            return [
+                ...entirePhraseContained,
+                ...eachWordContained,
+            ];
+        }
     }]).then(obj => obj.account);
 }

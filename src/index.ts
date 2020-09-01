@@ -8,6 +8,10 @@ import { Book } from './gnucash/Book';
 import { Transaction as GnucashTransaction } from './gnucash/Transaction';
 import { Account as GnucashAccount } from './gnucash/Account';
 
+const EXIT_WITHOUT_SAVING = Symbol();
+const SAVE_AND_EXIT = Symbol();
+
+
 export async function run(options: RunOptions) {
     const [ gnucash, transactions ] = await Promise.all([
         Gnucash.fromFile(options.infile),
@@ -42,10 +46,14 @@ async function mergeInTransactions(transactions: Transaction[], book: Book) {
         if (exists) continue;
 
         const destAccount = await promptForAccount(
-            `${transaction.date.toISO()}: ${sourceAccount.getName()}: ${transaction.description}`,
+            `${transaction.date.toSQL()}: \$${transaction.amount} ${sourceAccount.getName()}: ${transaction.description}`,
             book.getAccounts().filter(a => !a.isRoot() && a !== sourceAccount),
-            book
+            book,
+            true
         );
+
+        if (destAccount === SAVE_AND_EXIT) return;
+        if (destAccount === EXIT_WITHOUT_SAVING) process.exit(0);
 
         book.addChild(
             GnucashTransaction.fromObj({
@@ -85,27 +93,43 @@ async function getOrSetGnucashAccountForMintAccount(mintAccount: Account, book: 
     return ret;
 }
 
-async function promptForAccount(message: string, accounts: GnucashAccount[], book: Book): Promise<GnucashAccount> {
+async function promptForAccount(message: string, accounts: GnucashAccount[], book: Book, exitOptions?: false): Promise<GnucashAccount>;
+async function promptForAccount(message: string, accounts: GnucashAccount[], book: Book, exitOptions: true): Promise<GnucashAccount | typeof SAVE_AND_EXIT | typeof EXIT_WITHOUT_SAVING>;
+async function promptForAccount(message: string, accounts: GnucashAccount[], book: Book, exitOptions = false): Promise<GnucashAccount | typeof SAVE_AND_EXIT | typeof EXIT_WITHOUT_SAVING> {
     const choices = accounts.map(account => ({
         name: account.getChoiceName(book),
         value: account,
     }));
 
-    return await prompt([{
-        message: message,
-        type: 'autocomplete',
-        name: 'account',
-        source: (_: unknown, input = '') => {
-            const search = input.toLowerCase().trim();
-            const entirePhraseContained = choices.filter(choice => choice.name.toLowerCase().includes(search));
-            const searchWords = search.split(/\s+/).filter(word => word.length);
-            const eachWordContained = choices.filter(choice => 
-                !entirePhraseContained.includes(choice) &&
-                searchWords.every(word => choice.name.toLowerCase().includes(word)));
-            return [
-                ...entirePhraseContained,
-                ...eachWordContained,
-            ];
-        }
-    }]).then(obj => obj.account);
+    const extraMenuOptions = exitOptions
+        ? [
+            { name: '------', value: null },
+            { name: 'Exit Without Saving', value: EXIT_WITHOUT_SAVING },
+            { name: 'Save & Exit', value: SAVE_AND_EXIT },
+            { name: '------', value: null },
+        ]
+        : [];
+
+    let ret: GnucashAccount | typeof EXIT_WITHOUT_SAVING | typeof SAVE_AND_EXIT | null = null;
+    while (ret === null) {
+        ret = await prompt([{
+            message: message,
+            type: 'autocomplete',
+            name: 'account',
+            source: (_: unknown, input = '') => {
+                const search = input.toLowerCase().trim();
+                const entirePhraseContained = choices.filter(choice => choice.name.toLowerCase().includes(search));
+                const searchWords = search.split(/\s+/).filter(word => word.length);
+                const eachWordContained = choices.filter(choice => 
+                    !entirePhraseContained.includes(choice) &&
+                    searchWords.every(word => choice.name.toLowerCase().includes(word)));
+                return [
+                    ...entirePhraseContained,
+                    ...eachWordContained,
+                    ...extraMenuOptions,
+                ];
+            }
+        }]).then(obj => obj.account);
+    }
+    return ret;
 }

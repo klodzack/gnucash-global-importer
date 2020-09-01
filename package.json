@@ -2,7 +2,7 @@
   "name": "gnucash-global-importer",
   "version": "0.0.0-development",
   "description": "Import data into gnucash",
-  "main": "dist/cli.js",
+  "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch"
@@ -10,6 +10,9 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/klodzack/gnucash-global-importer.git"
+  },
+  "bin": {
+    "gnucash-import": "cli-entrypoint.js"
   },
   "author": "",
   "license": "ISC",

@@ -1,4 +1,5 @@
 import * as yargs from 'yargs';
+import { DateTime } from 'luxon';
 import { run } from './index';
 
 function runAsync(x: () => Promise<any>) {
@@ -20,6 +21,7 @@ function runAsync(x: () => Promise<any>) {
                 .positional('email', { description: 'Email address for Mint login' })
                 .positional('outfile', { description: 'Output gnucash file' })
                 .option('password', { alias: 'p' })
+                .option('since', { alias: 's' })
                 ,
             args => runAsync(async () => {
                 await run({
@@ -27,6 +29,7 @@ function runAsync(x: () => Promise<any>) {
                     email: args.email as string,
                     outfile: args.outfile as string,
                     password: args.password as (string | undefined),
+                    since: args.since && DateTime.fromSQL(args.since as string),
                 });
             })
         )

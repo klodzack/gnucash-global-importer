@@ -14,8 +14,10 @@ export async function run(options: RunOptions) {
         pullAllTransactions(options)
     ]);
 
-    await linkAccounts(transactions, gnucash.getBook());
-    await mergeInTransactions(transactions, gnucash.getBook());
+    const filteredTransactions = transactions.filter(t => !options.since || options.since < t.date);
+
+    await linkAccounts(filteredTransactions, gnucash.getBook());
+    await mergeInTransactions(filteredTransactions, gnucash.getBook());
 
     await gnucash.writeToFile(options.outfile);
 }

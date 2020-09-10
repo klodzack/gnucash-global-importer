@@ -1,10 +1,10 @@
-import { GncElement } from "./GncElement";
+import { GncSlottableElement } from "./GncSlottableElement";
 import { Transaction } from "./Transaction";
 import { Account } from "./Account";
 import { Account as MintAccount, Transaction as MintTransaction } from '../types';
 import { prompt } from 'inquirer';
 
-export class Book extends GncElement {
+export class Book extends GncSlottableElement {
     getId() {
         return this.getChildText('book:id');
     }

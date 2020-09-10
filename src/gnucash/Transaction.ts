@@ -1,4 +1,5 @@
-import { GncElement } from "./GncElement";
+import { GncElement } from './GncElement';
+import { GncSlottableElement } from "./GncSlottableElement";
 import { Split, SplitFromObj } from "./Split";
 import { DateTime } from 'luxon';
 import { newId } from "./util";
@@ -9,7 +10,7 @@ export interface TransactionFromObject {
     splits: SplitFromObj[];
 }
 
-export class Transaction extends GncElement {
+export class Transaction extends GncSlottableElement {
     getId(): string {
         return this.getChildText('trn:id', x => !!x.attributes && x.attributes.type === 'guid');
     }

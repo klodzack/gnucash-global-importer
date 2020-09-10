@@ -7,6 +7,8 @@ import { Account, Transaction } from './types';
 import { Book } from './gnucash/Book';
 import { Transaction as GnucashTransaction } from './gnucash/Transaction';
 import { Account as GnucashAccount } from './gnucash/Account';
+import { StoredTransaction } from './types/StoredTransaction';
+import chalk from 'chalk';
 
 const EXIT_WITHOUT_SAVING = Symbol();
 const SAVE_AND_EXIT = Symbol();
@@ -39,11 +41,15 @@ async function mergeInTransactions(transactions: Transaction[], book: Book) {
 
         const sourceAccount = book.getAccountForMintAccount(transaction.account);
 
-        const exists = !!book.getTransactions().find(trans =>
+        const existsAsTransaction = !!book.getTransactions().find(trans =>
             trans.getDatePosted().equals(transaction.date) &&
             trans.getDescription() === transaction.description &&
             trans.getSplits().find(sp => sp.getAccountId() === sourceAccount.getId()));
-        if (exists) continue;
+        const isDuplicated = book.getSlotAsArray<StoredTransaction>('gncmint:duplicatedtransactions').find(trans =>
+            trans.accountId === transaction.account.id &&
+            trans.amount === transaction.amount &&
+            trans.datestr === transaction.date.toSQLDate());
+        if (existsAsTransaction || isDuplicated) continue;
 
         const destAccount = await promptForAccount(
             `${transaction.date.toSQL()}: \$${transaction.amount} ${sourceAccount.getName()}: ${transaction.description}`,
@@ -54,6 +60,19 @@ async function mergeInTransactions(transactions: Transaction[], book: Book) {
 
         if (destAccount === SAVE_AND_EXIT) return;
         if (destAccount === EXIT_WITHOUT_SAVING) process.exit(0);
+
+        if (destAccount.getMintAccountId() !== null && transaction.amount > 0) {
+            book.setSlotWithArray<StoredTransaction>('gncmint:duplicatedtransactions', [
+                ...book.getSlotAsArray<StoredTransaction>('gncmint:duplicatedtransactions'),
+                {
+                    accountId: transaction.account.id,
+                    amount: transaction.amount,
+                    datestr: transaction.date.toSQLDate() as string,
+                }
+            ]);
+            console.log(chalk.gray('Transaction is or will be a duplicate, skipping.'));
+            continue;
+        }
 
         book.addChild(
             GnucashTransaction.fromObj({
